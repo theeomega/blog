@@ -18,6 +18,12 @@ const projectsData: Project[] = [
     imgSrc: '/static/images/time-machine.jpg',
     href: 'https://github.com/Aw4iskh4n/pwnedpasswd',
   },
+  {
+    title: 'Linux Firewall',
+    description: "This project is a simple firewall utility built using Python and the Scapy library. It allows you to monitor network traffic, block or unblock IP addresses and domains, and manage custom firewall rules.",
+    imgSrc: '/static/images/time-machine.jpg',
+    href: 'https://github.com/Aw4iskh4n/Semester-II-Project',
+  },
 ]
 
 export default projectsData
