@@ -3,7 +3,7 @@ const siteMetadata = {
   title: 'Muhammad Awais',
   author: 'Omega',
   headerTitle: 'TheOmega',
-  description: 'A blog created with Next.js and Tailwind.css',
+  description: 'A blog focused on Cybersecurity, CTF challenges, and Web Application Security',
   language: 'en-us',
   theme: 'system', // system, dark or light
   siteUrl: 'https://tailwind-nextjs-starter-blog.vercel.app',
