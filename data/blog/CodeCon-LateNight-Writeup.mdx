@@ -94,6 +94,19 @@ makeBackup() {
 
 The functionality is quite simple. The value of the `to` parameter is concatenated with the current date and time, and then it is assigned as the file name using `path.basename()`. This function can be exploited, as we will see later. Now, let's continue to understand the `makeBackup()` functionality. After assigning a file name, it creates a file with that name using `fs.writeFileSync()`, and the content of the file is set to the value of the `msg` parameter.
 
+Right after `makeBackup()` is called, `index.ejs` is rendered with the following content, and the value of `msg` is set as the placeholder of the input field:
+```
+<html>
+<body>
+    <% if ( message != null ) { %>
+        <input type="text" placeholder="<%= message %>">
+    <% } else { %>
+        <input type="text" placeholder="Message...">
+    <% } %>
+</body>
+</html>
+```
+
 ### Dockerfile
 ```
 FROM node:18 as node-build
@@ -118,6 +131,8 @@ EXPOSE 80
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
 ````
+
+Nothing significant appears in the Dockerfile, as there is no `flag.txt` being copied or anything similar. This indicates that we need to obtain `Remote Code Execution (RCE)`.
 
 ### nginx.conf
 ```
@@ -146,3 +161,9 @@ http {
     }
 }
 ```
+There’s a restriction on accessing `/admin` and `/admin/`. This is hilarious to me because I couldn’t bypass such a simple restriction. The funny part is that I tried almost every payload available on Google to bypass restrictions like these, which typically include null bytes and other bypass techniques, but I failed.
+
+Later, when I discovered the solution, I couldn’t stop laughing. You can bypass the restriction simply by capitalizing any letter in the path, like `/Admin` or `/AdmiN`, and it works!
+
+I know the solution, but why didn’t it come to my mind at that time??? Haaaaaaaah!😄
+
