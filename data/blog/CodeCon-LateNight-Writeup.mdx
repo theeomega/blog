@@ -1,1 +1,134 @@
+---
+title: CodeCon-CUI'24 - CTF - Web - Late Night
+date: '2024-08-16'
+tags: ['CodeCon', 'Web', 'CTF', 'EJS', 'Writeup']
+draft: false
+summary: Exploiting EJS to get RCE in Web Application.
+---
 
+Assalam-o-Alaikum!
+
+This is the writeup for CodeCon-CUI'24 Web Challenge named "Late Night." Unfortunately, I didn't solve it during the competition because I was unable to bypass a very simple restriction on the `/admin` endpoint. My mind was so stuck at the time that I couldn't figure out how to bypass that restriction. Later, when I realized the solution, I laughed at myself so much. Hahaha!
+
+Now, let's begin.
+
+# Challenge Description
+
+> IDK what I was doing this late at night :-( 
+
+We are provided with a zip file containing the following files:
+
+- `app.y`
+- `Dockerfile`
+- `nginx.conf`
+- `package.json`
+- `package-lock.json`
+- `supervisord.conf`
+
+### app.py
+```
+const express = require('express');
+const process = require('process');
+const path = require('path');
+const ejs = require('ejs');
+const fs = require('fs');
+const app = express();
+process.chdir("/tmp");
+
+fs.writeFileSync('index.ejs', `
+<html>
+<body>
+    <% if ( message != null ) { %>
+        <input type="text" placeholder="<%= message %>">
+    <% } else { %>
+        <input type="text" placeholder="Message...">
+    <% } %>
+</body>
+</html>
+`);
+
+class Message {
+    constructor(to, msg) {
+        this.to = to;
+        this.msg = msg;
+        this.file = null;
+    }
+
+    send() {
+        console.log(`Message sent to: ${this.to}`);
+    }
+
+    makeBackup() {
+        this.file = path.basename(`${Date.now()}_${this.to}`);
+        fs.writeFileSync(this.file, this.msg);
+    }
+}
+
+app.set('view engine', 'ejs');
+app.set('views', '/tmp');
+
+app.get('/admin', (req, res) => {
+    let to = req.query.to || "pro@chc.com";
+    let msg = req.query.msg || "Hello, I am a noob, please teach me how to RCE this server";
+    var message = new Message(to, msg);
+    message.makeBackup();
+    res.render('index.ejs', { message: message.msg });
+});
+
+const port = 3000;
+app.listen(port, () => {
+    console.log(`Server is running on http://localhost:${port}`);
+});
+```
+### Dockerfile
+```
+FROM node:18 as node-build
+WORKDIR /app
+
+COPY app.js ./
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+FROM nginx:alpine
+RUN apk --no-cache add curl supervisor
+COPY ./nginx.conf /etc/nginx/nginx.conf
+
+COPY --from=node-build /app /app
+
+COPY ./supervisord.conf /etc/supervisord.conf
+COPY ./docker-entrypoint.sh /docker-entrypoint.sh
+
+
+EXPOSE 80
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+````
+
+### nginx.conf
+```
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen 80;
+
+        location / {
+            proxy_pass http://localhost:3000;            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location = /admin {
+            deny all;
+        }
+
+        location = /admin/ {
+            deny all;
+        }
+    }
+}
+```
