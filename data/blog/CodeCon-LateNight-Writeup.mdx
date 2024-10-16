@@ -168,3 +168,33 @@ Later, when I discovered the solution, I couldn’t stop laughing. You can bypas
 
 I know the solution, but why didn’t it come to my mind at that time??? Haaaaaaaah!😄
 
+Let's get back to it now. Let's talk about a vulnerability that could be exploited: the `path.basename()` method. First, let's understand how it works.
+
+The `path.basename()` method returns the last portion of a path, similar to the Unix basename command. Trailing directory separators are ignored.
+
+For Example:
+```
+path.basename('/foo/bar/baz/asdf/quux.html');
+// Returns: 'quux.html'
+```
+
+Yes! What can we do? We can overwrite `index.ejs` with our own content because of this vulnerability. We will set `to` parameter to `/index.js`, which will create file `index.ejs` and overwrite current `index.ejs`. We’ll inject malicious code into `index.ejs`, as it is being rendered, and attempt to get `Remote Code Execution (RCE)`. Let’s start working on it nowwwww!
+
+What should our payload be? After doing some research, I found out about the `child_process` module in Node.js. This module allows us to create and control child processes, enabling us to `execute` system commands, `run scripts`, and perform other operations outside the main Node.js process.
+
+Lets create our payload:
+```
+<%- require(‘child_process’).exec(‘id’) %>
+```
+
+URL encode it:
+```
+%3C%25-%20require%28%E2%80%98child_process%E2%80%99%29.exec%28%E2%80%98id%E2%80%99%29%20%25%3E
+```
+
+Then, send the payload like this:
+```
+/Admin?to=/index.ejs&msg=%3C%25-%20require%28%E2%80%98child_process%E2%80%99%29.exec%28%E2%80%98id%E2%80%99%29%20%25%3E
+```
+
+This should allow us to inject and execute the malicious code to get RCE.
