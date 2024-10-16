@@ -9,7 +9,7 @@ const projectsData: Project[] = [
   {
     title: 'File Organizer',
     description: "The File Organizer Tool swiftly sorts files in directories by their extensions. With a user-friendly interface, it categorizes files into groups like 'Audio' or 'Video'. Its standout 'Undo' feature allows easy reversals, ensuring flexibility and ease for users. Perfect for decluttering digital spaces efficiently.",
-    imgSrc: '/static/images/google.png',
+    imgSrc: '/static/images/FileOrganizer.png',
     href: 'https://github.com/Aw4iskh4n/FolderOrganizer-GUI',
   },
   {
