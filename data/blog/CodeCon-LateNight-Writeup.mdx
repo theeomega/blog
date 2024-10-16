@@ -14,7 +14,7 @@ Now, let's begin.
 
 # Challenge Description
 
-> _IDK what I was doing this late at night :-(_ 
+> IDK what I was doing this late at night :-( 
 
 We are provided with a zip file containing the following files:
 
@@ -80,6 +80,20 @@ app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
 ```
+
+This is a simple web application that has only one endpoint, `/admin`, which takes two parameters: `to` and `msg`. If not provided, it assigns default values to them. After that, a `message` class constructor is initialized with the values of `to` and `msg`. Then, the `makeBackup()` method inside the `message` class is called.
+
+##### `makeBackup()`
+For functionality of makeBackup():
+```
+makeBackup() {
+        this.file = path.basename(`${Date.now()}_${this.to}`);
+        fs.writeFileSync(this.file, this.msg);
+    }
+```
+
+The functionality is quite simple. The value of the `to` parameter is concatenated with the current date and time, and then it is assigned as the file name using `path.basename()`. This function can be exploited, as we will see later. Now, let's continue to understand the `makeBackup()` functionality. After assigning a file name, it creates a file with that name using `fs.writeFileSync()`, and the content of the file is set to the value of the `msg` parameter.
+
 ### Dockerfile
 ```
 FROM node:18 as node-build
