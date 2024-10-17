@@ -180,3 +180,43 @@ In this case, while the query is vulnerable to SQL injection due to direct user 
 - **Keyword Filtering:** The system filters potentially dangerous SQL keywords like exec, load, and match, which could otherwise be used to craft malicious queries.
 - **No Direct Reflection:** Since the query only inserts data into the database without reflecting any results back to the user (e.g., no response or display of inserted data), it limits the attacker's ability to verify or exploit the SQL injection easily.
 
+First, we need to find a way to determine whether the result of our query is true or false. For example, if we inject `1=1`, we know it should return `true`, but how can we confirm that the query was successful? Similarly, if we inject `1=0`, it should return `false`, but we need some indication that the query was rejected or failed. Finding this feedback or hint from the application will help us understand whether our query is working as expected and if our exploit attempt is succeeding.
+
+By identifying some behavior or response from the application (like a change in output, error messages), we can infer whether our query was true or false.
+
+Upon reviewing this section of code
+```
+query = db.insert("INSERT INTO feedback(username, feedback) VALUES(?,'%s')" % feedback, session['username'])
+                if query is not True:
+                    msg = 'Something went wrong'
+                    return render_template('home.html', username=session['username'], msg=msg)
+                feedback = "Thanks for the feedback"
+```
+Here, we can see that the application provides only two possible outputs: `Something went wrong` and `Thanks for the feedback`. If there is any error in the query, it will display `Something went wrong`. If there’s no error, it will display `Thanks for the feedback`.
+
+To determine whether our query is `true` or `false`, we need to construct a query in such a way that, if the condition is `true`, it performs a specific action that triggers the output `Thanks for the feedback`. If the condition is false, it should lead to an operation that causes an error, resulting in the `Something went wrong` message.
+
+By using these two distinct outputs as indicators, we can understand whether our query was successful (true) or failed (false).
+
+We can use something similar to `if` and `else` in SQLite, which is achieved using `CASE` WHEN THEN. This allows us to create conditional logic in our query, helping us determine whether the query evaluates to true or false. By using `CASE`, we can specify actions based on the outcome of the condition.
+
+For Example:
+```
+SELECT CASE 
+    WHEN 1=1 THEN 'True' 
+    ELSE 'False' 
+END;
+```
+
+We will use a conditional error like (1/0), which will trigger an error and help us distinguish between true and false. The idea is to check each character of the flag with our input using substr() and cause an error based on the comparison.
+
+Let's first confirm whether this approach works. I will test the following queries:
+
+`' OR (1/1) AND '1` – This should display "Thanks for the feedback."
+`' OR (1/0) AND '1` – This should display "Something went wrong."
+
+Yes. It works. Now lets create our basic payload for final testing.
+
+```
+' OR CASE WHEN SUBSTR((SELECT flag FROM flag),1,1)='F' THEN 1 ELSE (1/0) END AND '1
+```
