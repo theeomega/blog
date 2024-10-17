@@ -178,13 +178,14 @@ It is a simple web application that inserts the value `FlagY{fake_flag}` into th
 
 In this case, while the query is vulnerable to SQL injection due to direct user input placement without parameterization (using `%s`), two challenges limit the exploitation:
 - **Keyword Filtering:** The system filters potentially dangerous SQL keywords like exec, load, and match, which could otherwise be used to craft malicious queries.
-    ```def blacklist(string):
-    string = string.lower()
-    blocked_words = ['exec', 'load', 'blob', 'glob', 'union', 'join', 'like', 'match', 'regexp', 'in', 'limit', 'order', 'hex', 'where']
-    for word in blocked_words:
-        if word in string:
-            return True
-    return False 
+    ```
+    def blacklist(string):
+        string = string.lower()
+        blocked_words = ['exec', 'load', 'blob', 'glob', 'union', 'join', 'like', 'match', 'regexp', 'in', 'limit', 'order', 'hex', 'where']
+        for word in blocked_words:
+            if word in string:
+                return True
+        return False 
     ```
 - **No Direct Reflection:** Since the query only inserts data into the database without reflecting any results back to the user (e.g., no response or display of inserted data), it limits the attacker's ability to verify or exploit the SQL injection easily.
 
