@@ -217,7 +217,7 @@ SELECT CASE
 END;
 ```
 
-We can't use `sleep()` because it is not available in sqlite. We will use a conditional error like (1/0), which will trigger an error and help us distinguish between true and false. The idea is to check each character of the flag with our input using substr() and cause an error based on the comparison.
+We can't use `sleep()` because it is not available in sqlite. We will use a conditional error like `(1/0)`, which will trigger an error and help us distinguish between true and false. The idea is to check each character of the flag with our input using `substr()` and cause an error based on the comparison.
 
 Let's first confirm whether this approach works. I will test the following queries:
 
