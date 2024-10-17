@@ -212,8 +212,8 @@ We can't use `sleep()` because it is not available in sqlite. We will use a cond
 
 Let's first confirm whether this approach works. I will test the following queries:
 
-`' OR (1/1) AND '1` – This should display "Thanks for the feedback."
-`' OR (1/0) AND '1` – This should display "Something went wrong."
+- `' OR (1/1) AND '1` – This should display "Thanks for the feedback."
+- `' OR (1/0) AND '1` – This should display "Something went wrong."
 
 Great! Since it works, let's create our basic payload for final testing:
 
