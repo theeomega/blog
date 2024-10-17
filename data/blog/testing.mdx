@@ -178,6 +178,14 @@ It is a simple web application that inserts the value `FlagY{fake_flag}` into th
 
 In this case, while the query is vulnerable to SQL injection due to direct user input placement without parameterization (using `%s`), two challenges limit the exploitation:
 - **Keyword Filtering:** The system filters potentially dangerous SQL keywords like exec, load, and match, which could otherwise be used to craft malicious queries.
+    ```def blacklist(string):
+    string = string.lower()
+    blocked_words = ['exec', 'load', 'blob', 'glob', 'union', 'join', 'like', 'match', 'regexp', 'in', 'limit', 'order', 'hex', 'where']
+    for word in blocked_words:
+        if word in string:
+            return True
+    return False 
+    ```
 - **No Direct Reflection:** Since the query only inserts data into the database without reflecting any results back to the user (e.g., no response or display of inserted data), it limits the attacker's ability to verify or exploit the SQL injection easily.
 
 First, we need to find a way to determine whether the result of our query is true or false. For example, if we inject `1=1`, we know it should return `true`, but how can we confirm that the query was successful? Similarly, if we inject `1=0`, it should return `false`, but we need some indication that the query was rejected or failed. Finding this feedback or hint from the application will help us understand whether our query is working as expected and if our exploit attempt is succeeding.
