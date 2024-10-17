@@ -205,7 +205,7 @@ Here, we can see that the application provides only two possible outputs: `Somet
 
 To determine whether our query is `true` or `false`, we need to construct a query in such a way that, if the condition is `true`, it performs a specific action that triggers the output `Thanks for the feedback`. If the condition is false, it should lead to an operation that causes an error, resulting in the `Something went wrong` message.
 
-By using these two distinct outputs as indicators, we can understand whether our query was successful (true) or failed (false).
+By using these two distinct outputs as indicators, we can understand whether result our query is `true` or failed `false`.
 
 We can use something similar to `if` and `else` in SQLite, which is achieved using `CASE` WHEN THEN. This allows us to create conditional logic in our query, helping us determine whether the query evaluates to true or false. By using `CASE`, we can specify actions based on the outcome of the condition.
 
