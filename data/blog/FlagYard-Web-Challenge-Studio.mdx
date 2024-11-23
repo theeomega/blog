@@ -66,6 +66,8 @@ def download():
 
 We are provided with the server-side code of this web application. Let's start analyzing the code to find vulnerabilities and determine ways to exploit them.
 
+### `/ route`
+
 ```
 @app.route('/')
 def home():
@@ -78,6 +80,8 @@ def home():
 
 The `/` endpoint takes a `page` parameter from the URL and appends `.html` to it. If a file with that name exists in the `templates` folder, it renders that page. Otherwise, it defaults to rendering `home.html`. This behavior is key to exploiting the vulnerability, as we will see later.
 
+### `/music route`
+
 ```
 @app.route('/music')
 def music():
@@ -87,7 +91,32 @@ def music():
 
 The `/music` endpoint is designed to display only the files that end with `.mp3` on the `music.html` page. It does so by filtering the list of files in the upload folder and passing only those with the `.mp3` extension to the template.
 
-Now, let’s dive into the interesting part of the code. The `/upload` endpoint handles the upload of a `music_file` provided by the user. The uploaded file’s name is passed to the `safe_filename()` function to sanitize it.
+### `/upload route`
+
+Now, let’s dive into the interesting part of the code. 
+
+```
+@app.route('/upload', methods=['POST'])
+def upload():
+    def safe_filename(file):
+        if '../' in file:
+            return safe_filename(file.replace('../', ''))
+        return file
+    try:
+        music_file = request.files.get('music_file')
+        dst_file = safe_filename(music_file.filename)
+        if music_file and dst_file.split('.')[1] == 'mp3':
+            flash('File uploaded')
+            music_file.save(os.path.join(app.config['UPLOAD_FOLDER'], dst_file))
+        else:
+            flash('File blocked')
+    except RequestEntityTooLarge:
+        flash('File is too large')
+    return redirect(url_for('music'))
+
+```
+
+The `/upload` endpoint handles the upload of a `music_file` provided by the user. The uploaded file’s name is passed to the `safe_filename()` function to sanitize it.
 
 ```python
 def safe_filename(file):
@@ -98,7 +127,7 @@ def safe_filename(file):
 
 - The `safe_filename()` function recursively checks for `../` in the filename and removes it if found. This aims to prevent directory traversal, but it's not effective. This can be simply bypassed with `\u002e\` which is a unicode for `.`.
 
-After sanitizing the filename, the code proceeds to check if the file extension is `mp3`. It does this by splitting the filename on the `.` character and checking whether the extension is equal to `'mp3'`. However, this method is flawed and can be easily bypassed with filenames like `bypassed.mp3.php`, where the `.mp3` is just a misleading part of the filename. This superficial check does not fully validate the actual file type.
+After sanitizing the filename, the code proceeds to check if the file extension is `mp3`. It does this by splitting the filename on the `.` character and checking whether the string after first `.` is `'mp3'`. However, this method is flawed and can be easily bypassed with filenames like `bypassed.mp3.php`, where the `.mp3` is just a misleading part of the filename. This superficial check does not fully validate the actual file type.
 
 If the file passes the extension check, the following line of code is responsible for saving it:
 
