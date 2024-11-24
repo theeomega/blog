@@ -232,13 +232,18 @@ I wrote the python script to automate the whole process for retrieving the flag.
 import requests
 import os
 from urllib.parse import urlencode
+from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 url = "your-instance-url/" #Add "/" at end of the URL
 
 def upload_file():
+
+    parsed_url = urlparse(url)
+    hostname = parsed_url.netloc
+
     headers = {
-        'Host': 'a99773be360f370c4a0d1.playat.flagyard.com',
+        'Host': hostname,
         'Content-Type': 'multipart/form-data; boundary=----WebKitFormBoundaryu1i8nw4tZ1Hi1EN7',
         'Connection': 'keep-alive',
     }
