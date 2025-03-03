@@ -51,6 +51,9 @@ const siteMetadata = {
     // supports mailchimp, buttondown, convertkit, klaviyo, revue, emailoctopus, beehive
     // Please add your .env file and modify it according to your selection
     provider: 'buttondown',
+    buttondownConfig: {
+      apiKey: process.env.BUTTONDOWN_API_KEY,
+    },
   },
   comments: {
     // If you want to use an analytics provider you have to add it to the
