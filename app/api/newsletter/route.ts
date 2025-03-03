@@ -6,6 +6,8 @@ const handler = NewsletterAPI({
     buttondown: {
       apiKey: process.env.BUTTONDOWN_API_KEY,
     },
+    // Add other providers if needed
+  },
   // @ts-ignore
   provider: siteMetadata.newsletter.provider,
 })
