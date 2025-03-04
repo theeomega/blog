@@ -2,7 +2,6 @@ import { NewsletterAPI } from 'pliny/newsletter'
 import siteMetadata from '@/data/siteMetadata'
 
 const handler = NewsletterAPI({
-
  providers: {
     buttondown: {
       apiKey: process.env.BUTTONDOWN_API_KEY, // ✅ Add Buttondown config
