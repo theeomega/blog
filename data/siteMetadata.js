@@ -48,11 +48,11 @@ const siteMetadata = {
     // },
   },
   newsletter: {
-    // supports mailchimp, buttondown, convertkit, klaviyo, revue, emailoctopus, beehive
-    // Please add your .env file and modify it according to your selection
     provider: 'buttondown',
-    buttondownConfig: {
-    apiUrl: 'https://api.buttondown.email/v1/',
+  buttondownConfig: {
+    apiKey: process.env.BUTTONDOWN_API_KEY,
+    // Optional: Add if you need to override default API URL
+    // apiUrl: 'https://api.buttondown.email/v1/subscribers'
   },
   },
   comments: {
