@@ -48,8 +48,8 @@ const siteMetadata = {
     // },
   },
   newsletter: {
-    provider: 'buttondown',
-  buttondownConfig: {
+  provider: 'buttondown',
+  buttondownConfig: { 
     apiKey: process.env.BUTTONDOWN_API_KEY,
     // Optional: Add if you need to override default API URL
     // apiUrl: 'https://api.buttondown.email/v1/subscribers'
