@@ -1,0 +1,472 @@
+---
+title: FlagYard - Web - OhMyQL
+date: '2025-07-06'
+tags: ['SQL Injection', 'JWT', 'WEB', 'Exploitation', 'GraphQL']
+draft: false
+summary: This challenge involves exploiting a GraphQL vulnerability through SQL injection to bypass authentication and gain unauthorized access. By manipulating the JWT token, we set flagOwner to true and retrieve the flag.
+---
+
+# Challenge Description
+
+> _Are you aware of modern web technologies ?_
+
+It’s been five months since I last wrote anything. I wanted to write for a long time, but for some reason, I just didn’t feel like it back then. Now, I’ve finally convinced myself to start writing again. This is the “OhMyQL” challenge from Flagyard, and it’s in the hard category. 
+
+The first thing I want to tell you is that I do not know why they categorized this as hard. In my opinion, it should be in the easy category, or at most, medium. You will probably realize this after reading this blog. One possible reason for the "hard" label could be the language used in the challenge. It uses GraphQL, which was also new to me, and handling its requests is a little different. However, it is not very complex. I will let you decide at the end which category it should belong to. Now, let us begin by understanding the challenge.
+
+### index.js
+```
+const express = require('express');
+const { graphqlHTTP } = require('express-graphql');
+const { GraphQLSchema, GraphQLObjectType, GraphQLString } = require('graphql');
+const jwt = require('jsonwebtoken');
+const path = require('path');
+const db = require('./database');
+const { JWT_SECRET } = require('./config');
+
+const app = express();
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+const contextMiddleware = (req, res, next) => {
+  const token = req.headers.authorization || '';
+  let user = null;
+  try {
+    if (token.startsWith('Bearer ')) {
+      user = jwt.verify(token.replace('Bearer ', ''), JWT_SECRET);
+    }
+  } catch (e) {
+    console.error('Token verification failed:', e);
+  }
+  req.context = { user, db };
+  next();
+};
+
+const errorHandlerMiddleware = (err, req, res, next) => {
+  console.error('An error occurred:', err);
+  res.status(err.status || 500).json({'Error':'Internal Server Error' });
+};
+
+const UserType = new GraphQLObjectType({
+  name: 'User',
+  fields: {
+    username: { type: GraphQLString },
+    role: { type: GraphQLString }
+  }
+});
+
+const AuthResponseType = new GraphQLObjectType({
+  name: 'AuthResponse',
+  fields: {
+    token: { type: GraphQLString }
+  }
+});
+
+const QueryType = new GraphQLObjectType({
+  name: 'Query',
+  fields: {
+    me: {
+      type: GraphQLString,
+      resolve: async (_, args, { context }) => {
+        const { user, db } = context;
+        if (!user) {
+          throw new Error('Not authenticated');
+        }
+        try {
+          const userData = await db.getUser(user.username);
+          return userData.username;
+        } catch (e) {
+          throw new Error('User not found');
+        }
+      }
+    },
+    getUser: {
+      type: GraphQLString,
+      args: { username: { type: GraphQLString } },
+      resolve: async (_, { username }, { context }) => {
+        const { db } = context;
+        try {
+          const userData = await db.getUser(username);
+          return userData.username;
+        } catch (e) {
+          throw new Error('User not found');
+        }
+      }
+    }
+  }
+});
+
+const MutationType = new GraphQLObjectType({
+  name: 'Mutation',
+  fields: {
+    login: {
+      type: AuthResponseType,
+      args: {
+        username: { type: GraphQLString },
+        password: { type: GraphQLString }
+      },
+      resolve: async (_, { username, password }, { context }) => {
+        const { db } = context;
+        try {
+          const user = await db.getUser(username);
+          if (!user || user.password !== password) {
+            throw new Error('Invalid credentials');
+          }
+          const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '6m' });
+          return { token };
+        } catch (e) {
+          throw new Error('Authentication failed');
+        }
+      }
+    },
+    setFlagOwner: {
+      type: GraphQLString,
+      args: { username: { type: GraphQLString } },
+      resolve: async (_, { username }, { context }) => {
+        const { user } = context;
+        if (!user) {
+          throw new Error('Not authorized');
+        }
+        if (user.username !== username) {
+          throw new Error('You can only set flag for your own account');
+        }
+        try {
+          const token = jwt.sign({ username, flagOwner: true }, JWT_SECRET, { expiresIn: '6m' });
+          return token;
+        } catch (e) {
+          throw new Error('Token generation failed');
+        }
+      }
+    }
+  }
+});
+
+const schema = new GraphQLSchema({
+  query: QueryType,
+  mutation: MutationType
+});
+
+app.use('/graphql', contextMiddleware, graphqlHTTP({
+  schema,
+  graphiql: false,
+  pretty: false,
+}));
+
+
+app.get('/admin', (req, res) => {
+  const token = req.headers.authorization;
+  let user;
+  try {
+    if (token && token.startsWith('Bearer ')) {
+      user = jwt.verify(token.replace('Bearer ', ''), JWT_SECRET); 
+    }
+  } catch (e) {
+    return res.status(403).send('Forbidden');
+  }
+  if (!user || user.flagOwner !== true) {
+    return res.status(403).send('Forbidden');
+  }
+  res.send(process.env.FLAG);
+});
+
+app.use(errorHandlerMiddleware);
+
+app.listen(4000, () => {
+  console.log('Server is running on port 4000');
+});
+```
+
+### database.js
+
+```
+const sqlite3 = require('sqlite3').verbose();
+const fs = require('fs');
+const path = './data.db';
+
+if (!fs.existsSync(path)) {
+  const db = new sqlite3.Database(path);
+  db.serialize(() => {
+    db.run(`CREATE TABLE users (
+      username TEXT PRIMARY KEY,
+      password TEXT,
+      flagowner INTEGER DEFAULT 0
+    )`);
+  });
+  db.close();
+}
+
+const db = new sqlite3.Database(path);
+
+const getUser = (username) => {
+  return new Promise((resolve, reject) => {
+    const query = `SELECT * FROM users WHERE username = '${username}'`;
+    db.get(query, (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+};
+
+
+
+
+module.exports = { getUser };
+```
+
+Once the challenge instance is launched, a login page is displayed, prompting us to enter a username and password. It is time to analyze the source code to understand the functionality of the login process and how we can retrieve the flag.
+
+```
+app.get('/admin', (req, res) => {
+  const token = req.headers.authorization;
+  let user;
+  try {
+    if (token && token.startsWith('Bearer ')) {
+      user = jwt.verify(token.replace('Bearer ', ''), JWT_SECRET); 
+    }
+  } catch (e) {
+    return res.status(403).send('Forbidden');
+  }
+  if (!user || user.flagOwner !== true) {
+    return res.status(403).send('Forbidden');
+  }
+  res.send(process.env.FLAG);
+});
+```
+As we can see in the code above, we can obtain the flag by accessing the `/admin` endpoint. However, there are a few checks that need to be passed:
+
+- The first check is that a `valid JWT token` must be present.
+- The second check is that the user must exist and the `flagOwner` property must be set to `true`.
+
+If both of these conditions are met, we will receive the flag. Otherwise, if any check fails, a "forbidden" response will be returned.
+
+The problem is that no user is registered in the database, so how can we get the user? Don’t worry, though. Let’s continue analyzing the login functionality.
+
+```
+login: {
+      type: AuthResponseType,
+      args: {
+        username: { type: GraphQLString },
+        password: { type: GraphQLString }
+      },
+      resolve: async (_, { username, password }, { context }) => {
+        const { db } = context;
+        try {
+          const user = await db.getUser(username);
+          if (!user || user.password !== password) {
+            throw new Error('Invalid credentials');
+          }
+          const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '6m' });
+          return { token };
+        } catch (e) {
+          throw new Error('Authentication failed');
+        }
+      }
+    }
+```
+
+This code handles the login process. It takes two arguments, `username` and `password`, and then calls the `getUser()` function, which is located in the `database.js` file, passing `username` as an argument. The result is then stored in `user` variable. The relevant line of code is:
+
+```
+const user = await db.getUser(username);
+```
+
+Let’s move on to the `getUser()` function and examine its functionality.
+
+```
+const getUser = (username) => {
+  return new Promise((resolve, reject) => {
+    const query = `SELECT * FROM users WHERE username = '${username}'`;
+    db.get(query, (err, row) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
+  });
+};
+```
+Oh! We can see that the input is being directly placed into the query without parameterization. This introduces a potential SQL injection vulnerability. So, we now have our first weapon!
+
+After placing the `username` (which is controlled by us) in the query, it runs the query. The result will then be stored in the `user` variable, as we discussed earlier. The issue, however, is that the query selects the row where the provided username is present, but the problem is that the `users` table is empty. So, the result of this `SELECT` statement will always be `empty` unless we exploit it using a `UNION` query.
+
+Let me explain this with an example using the same SELECT query. This is the vulnerable query, and remember, the users table has three columns but is empty:
+
+```
+SELECT * FROM users WHERE username = '${username}
+```
+
+If I input `' OR 1=1`, the query will become:
+```
+SELECT * FROM users WHERE username = '' OR 1=1
+```
+
+It will first check if the `username` is `empty`. Since the `table` is `empty`, this condition will return `false`. Then, it moves to the second condition, which is `1=1`, and this is always `true`. However, what will the result of this query be?
+
+It will still be `empty` because there is nothing to select from the `users` table. If the table had any rows, the condition ` OR 1=1 ` would cause the query to retrieve all rows and columns from the users table.
+
+In simple terms, the first `SELECT` statement alone won't help us. We need a second `SELECT` statement to get the output we want. To combine the results of both queries, we can use `UNION`. By using `UNION SELECT`, we can output any user of our choice.
+
+The following query will give us a valid output with the user in the response:
+```
+SELECT * FROM users WHERE username = '' UNION SELECT 'admin','admin',1;
+```
+
+Since the output of the first `SELECT` is empty, the second `SELECT` statement will return a `non-empty` result, where the `username` is `admin`, the `password` is `admin`, and `flagOwner` is `true`.
+
+Understood! Now, let's get back to the login code and continue analyzing from where we left off.
+
+```
+login: {
+      type: AuthResponseType,
+      args: {
+        username: { type: GraphQLString },
+        password: { type: GraphQLString }
+      },
+      resolve: async (_, { username, password }, { context }) => {
+        const { db } = context;
+        try {
+          const user = await db.getUser(username);
+          if (!user || user.password !== password) {
+            throw new Error('Invalid credentials');
+          }
+          const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '6m' });
+          return { token };
+        } catch (e) {
+          throw new Error('Authentication failed');
+        }
+      }
+    }
+```
+
+After calling `getUser()` and storing its return value in `user`, the code checks if a user is returned and whether the password matches the one provided by the user. If this check passes, we will receive a valid token with the username the user provided, not the username that was returned from the database. Let me clarify:
+
+As we set the `username` to `' UNION SELECT 'admin','admin',1;--` and the `password` to `admin`. After executing the query with the `username` we provided, it will return `admin, admin, and 1`. You can see that our `username` is `' UNION SELECT 'admin','admin',1;--`, but the database will return the `username` as `admin`.
+
+The code will then create the JWT token using our provided `username`, which is `' UNION SELECT 'admin','admin',1;--`. You can confirm this by inspecting the JWT on jwt.io.
+
+```
+const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '6m' });
+          return { token };
+```
+
+From this, we obtain a `valid JWT token`, but it does not have `flagOwner` set to `true`.
+
+Now, we need to find a way to set `flagOwner` to `true`. After analyzing the code, we can see that this part is the only way to achieve that:
+
+```
+setFlagOwner: {
+      type: GraphQLString,
+      args: { username: { type: GraphQLString } },
+      resolve: async (_, { username }, { context }) => {
+        const { user } = context;
+        if (!user) {
+          throw new Error('Not authorized');
+        }
+        if (user.username !== username) {
+          throw new Error('You can only set flag for your own account');
+        }
+        try {
+          const token = jwt.sign({ username, flagOwner: true }, JWT_SECRET, { expiresIn: '6m' });
+          return token;
+        } catch (e) {
+          throw new Error('Token generation failed');
+        }
+      }
+    }
+```
+
+This function is accepting `username` as an argument, and it is controlled by us. It then compares our `username` with `user.username`:
+
+
+```
+if (user.username !== username)
+```
+
+To proceed, we need to understand where `{ user }` is coming from. In this section of the code, we can see the line:
+
+```
+const { user } = context;
+```
+
+Here, the context is assigned the value. So, we need to determine where the context gets its value. 
+
+Looking further, we find the following middleware:
+
+```
+const contextMiddleware = (req, res, next) => {
+  const token = req.headers.authorization || '';
+  let user = null;
+  try {
+    if (token.startsWith('Bearer ')) {
+      user = jwt.verify(token.replace('Bearer ', ''), JWT_SECRET);
+    }
+  } catch (e) {
+    console.error('Token verification failed:', e);
+  }
+  req.context = { user, db };
+  next();
+};
+```
+
+Here, the `context` is being set in the middleware after verifying the JWT. It verifies the token and, if valid, assigns it to the user variable, which is then stored in req.context:
+
+```
+req.context = { user, db };
+```
+
+This essentially means that the `context` holds the data of the JWT. So, when the GraphQL resolver checks context.user, it’s accessing the decoded JWT, which contains the username.
+
+Now that we understand how the code works, we can bypass both of these checks:
+
+```
+if (!user) {
+    throw new Error('Not authorized');
+}
+
+if (user.username !== username) {
+    throw new Error('You can only set flag for your own account');
+}
+```
+
+- **First Check:** The first check verifies if there is a valid JWT token. We can bypass this check simply by providing the JWT token we obtained after logging in. Since we already have a valid token (from the login process), this check will pass without any issues.
+
+
+- **Second Check:** The second check compares the `username` we provide as an argument with the `username` in the JWT. To bypass this check, we will input the same `username` as in the JWT. In our case, the `username` in the JWT is `' UNION SELECT 'admin','admin',1;--`. You can confirm this by decoding the JWT using a tool like jwt.io. 
+
+Since the `GraphQL` request format is different from normal HTTP requests, here’s how you can send it:
+
+**1.** Intercept the login request using Burp Suite.
+
+**2** Replace the original GraphQL query with the following query to trigger the `setFlagOwner` mutation:
+
+
+```
+mutation setFlagOwner($username: String!) {
+                        setFlagOwner(username: $username) 
+    }
+```
+
+- Remove the password variable, as it's no longer needed.
+
+**3.** **Add the Authorization Header** with the token we obtained earlier:
+
+```
+Authorization: Bearer <your_token>
+```
+
+**4.** **Send the modified request.** This will return a new valid JWT, but this time with flagOwner set to true.
+
+**5.** With the new token, we can now use it to access the `/admin` endpoint and retrieve the flag.
+
+
+I’m not uploading the automation script for this challenge this time. I want all of you to take your time to understand the challenge thoroughly and then solve it. After that, write the automation script on your own. Feel free to share your script with me on Instagram or Twitter.
+
+Remember, don’t rely on AI for the automation script if you truly want to learn!
